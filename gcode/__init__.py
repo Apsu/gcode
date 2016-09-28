@@ -1,7 +1,7 @@
 from __future__ import print_function
-from math import pi, sqrt
+from math import pi
 
-from utils import *
+import utils
 from constants import *
 
 
@@ -10,6 +10,8 @@ class Printer(object):
 
     def __init__(
             self,
+            bed_x=100, # mm
+            bed_y=100, # mm
             nozzle_size=0.4, # mm
             filament_diameter=1.75, # mm
             extrusion_multiplier=1.0,
@@ -24,6 +26,11 @@ class Printer(object):
         self.position = {"x":0, "y":0, "z":0}
         # Position mode; only absolute implemented
         self.position_mode = "absolute"
+
+        # Bed X size in mm
+        self.bed_x = bed_x
+        # Bed Y size in mm
+        self.bed_y = bed_y
 
         # Nozzle diameter in mm
         self.nozzle_size = nozzle_size
@@ -49,7 +56,7 @@ class Printer(object):
         ## Defaults
 
         # Feed rate in mm/min
-        self.feed_rate = mms_to_mmm(20)
+        self.feed_rate = utils.mms_to_mmm(20)
 
     ## Properties
 
@@ -174,7 +181,7 @@ class Printer(object):
     @units.setter
     def units(self, unit_type):
         if unit_type == Units.mm:
-            write("G21", "millimeter units")
+            utils.write("G21", comment="millimeter units")
         else:
             raise ValueError("Only mm units implemented")
         self._units = unit_type
@@ -186,10 +193,10 @@ class Printer(object):
     @positioning.setter
     def positioning(self, mode):
         if mode == Offsets.absolute:
-            write("G90", "absolute positioning")
+            utils.write("G90", comment="absolute positioning")
         elif mode == Offsets.relative:
             raise ValueError("Relative positioning not implemented")
-            #write("G91", "relative positioning")
+            #utils.write("G91", comment="relative positioning")
         self._positioning = mode
 
     @property
@@ -200,9 +207,9 @@ class Printer(object):
     def extruding(self, mode):
         if mode == Offsets.absolute:
             raise ValueError("Absolute extruding not implemented")
-            #write("M82", "absolute extruding")
+            #utils.write("M82", comment="absolute extruding")
         elif mode == Offsets.relative:
-            write("M83", "relative extruding")
+            utils.write("M83", comment="relative extruding")
         self._extruding = mode
 
     @property
@@ -212,9 +219,9 @@ class Printer(object):
     @fan.setter
     def fan(self, speed):
         if speed == 0:
-            write("M107", comment="turn off fan")
+            utils.write("M107", comment="turn off fan")
         else:
-            write("M106", comment="turn on fan", s=int(speed/100.0*255))
+            utils.write("M106", comment="turn on fan", s=int(speed/100.0*255))
         self._fan_speed = speed
 
     ## Methods
@@ -222,55 +229,79 @@ class Printer(object):
     def level_mk2(self):
         "Perform bed leveling"
 
-        write("G80", comment="perform mesh bed-leveling")
+        utils.write("G80", comment="perform mesh bed-leveling")
 
         # Store position; z = 0.15 after leveling
-        printer.position = {"x": 0, "y": 0, "z": 0.15}
+        self.position = {"x": 0, "y": 0, "z": 0.15}
 
-    def home(self, axes=["x", "y", "z"], comment=None):
+    def home(self, axes=("x", "y", "z"), comment=None):
         "Home a set of axes"
 
-        write("G28", comment=comment, *axes)
+        utils.write("G28", *axes, comment=comment)
 
     def idle(self):
         "Disable motor idle hold"
 
-        write("M84", comment="disable motor idle hold")
+        utils.write("M84", comment="disable motor idle hold")
 
-    def heat(self, extruder=None, bed=None, wait=False):
+    def heat(self, extruder_temp=None, bed_temp=None, wait=False):
         "Heat up components, optionally waiting"
 
-        # Use configured temp if none supplied
-        if extruder == None:
-            extruder = self.extruder_temp
+        def extruder(temp):
+            # Use configured temp if none supplied
+            if temp == None:
+                temp = self.extruder_temp
 
-        # Use configured temp if none supplied
-        if bed == None:
-            bed = self.bed_temp
+            if temp == 0:
+                action="M104"
+                comment="turn off extruder"
+            elif wait:
+                action="M109"
+                comment="wait for extruder temp"
+            else:
+                action="M104"
+                comment="start heating extruder"
+                
+            utils.write(action, comment=comment, s=temp)
+                
+        def bed(temp):
+            # Use configured temp if none supplied
+            if temp == None:
+                temp = self.bed_temp
+
+            if temp == 0:
+                action="M140"
+                comment="turn off bed"
+            elif wait:
+                action="M190"
+                comment="wait for bed temp"
+            else:
+                action="M140"
+                comment="start heating bed"
+                
+            utils.write(action, comment=comment, s=temp)
 
         # Heat and continue
         if not wait:
-            write("M104", "start heating extruder", s=printer.extruder_temp)
-            if bed > 0:
-                write("M140", "start heating bed", s=printer.bed_temp)
+            extruder(extruder_temp)
+            bed(bed_temp)
         # Wait for temps
         else:
-            if bed > 0:
-                write("M190", "wait for bed temp", s=printer.bed_temp)
-            write("M109", "wait for extruder temp", s=printer.extruder_temp)
+            bed(bed_temp)
+            extruder(extruder_temp)
 
     def move(self, x=None, y=None, z=None, extrude=Extrusion.extrude, rate=None, comment=None):
         "Generate gcode for moving in a straight line and/or extruding"
 
-        # Generate single retraction if requested
-        if extrude == Extrusion.retract:
-            self.write("G1", comment="Retract", e=-self.retract_distance,
-                    f=mms_to_mmm(self.retract_speed))
-            self._prev_rate = mms_to_mmm(self.retract_speed)
+        # Generate retraction if requested
+        if extrude == Extrusion.retract or extrude == Extrusion.retract_only:
+            utils.write("G1", comment="retract", e=-self.retract_distance,
+		f=utils.mms_to_mmm(self.retract_speed))
+            self._prev_rate = utils.mms_to_mmm(self.retract_speed)
 
         # Set feed rate
         if rate:
-            self.feed_rate = rate
+            self.feed_rate = utils.mms_to_mmm(rate)
 
         # Command output arguments
         kwargs = {}
@@ -306,15 +337,11 @@ class Printer(object):
         y_offset = abs(y - self.position["y"])
         z_offset = abs(z - self.position["z"])
 
-        #print("cur_x: {}, cur_y: {}".format(self.position["x"], self.position["y"]))
-        #print("new_x: {}, new_y: {}, x_offset: {}, y_offset: {}".format(x, y, x_offset, y_offset))
-
         # Update to new position
         self.position = {"x": x, "y": y, "z": z}
 
         # Get movement distance
-        distance = self.distance(x_offset, y_offset)
-        #print("Distance: {}".format(distance))
+        distance = utils.distance(x_offset, y_offset)
 
         # Get extrusion distance if requested
         if extrude == Extrusion.extrude:
@@ -322,9 +349,28 @@ class Printer(object):
             kwargs["e"] = extrusion
 
         # Write out move command
-        self.write("G1", comment=comment, **kwargs)
+        utils.write("G1", comment=comment, **kwargs)
 
-    def rect(self, x1, y1, x2, y2, rate=None, retract=True, home=True):
+        # Advance if we retracted before
+        if extrude == Extrusion.retract or extrude == Extrusion.advance_only:
+            utils.write("G1", comment="advance", e=self.retract_distance,
+		f=utils.mms_to_mmm(self.retract_speed))
+            self._prev_rate = utils.mms_to_mmm(self.retract_speed)
+
+    def hop(self, x=None, y=None, height=0.1, comment=None, rate=None):
+        "Z-hop height above current Z, move to X/Y, then drop back down"
+
+        # Store current Z
+        z = self.position["z"]
+
+        # Hop
+        self.move(z=z + height, comment="Z hop", extrude=Extrusion.retract_only, rate=100)
+        # Move
+        self.move(x, y, comment=comment, extrude=Extrusion.idle, rate=rate)
+        # Drop
+        self.move(z=z, comment="Z drop", extrude=Extrusion.advance_only, rate=100)
+
+    def rect(self, x1, y1, x2, y2, rate=None):
         """
         Move to x1,y1, then draw a rectangle of single lines
         Move back to 0,0 at end if home=True
@@ -333,19 +379,37 @@ class Printer(object):
 
         # Set rate if provided
         if rate:
-            self.feed_rate = rate
-
-        # Move to starting point with retraction pref
-        self.move(x1, y1, extrude=Extrusion.retract)
+            self.feed_rate = utils.mms_to_mmm(rate)
 
         # Draw rectangle lines
-        self.move(x2, y1)
-        self.move(x2, y2)
-        self.move(x1, y2)
-        self.move(x1, y1)
+        self.move(x2, y1, comment="lower right")
+        self.move(x2, y2, comment="upper right")
+        self.move(x1, y2, comment="upper left")
+        self.move(x1, y1, comment="lower left")
 
-        # If home requested
-        if home:
-            # Move to home with retraction pref
-            self.move(0, 0, extrude=Extrusion.retract)
+    def extrusion(self, distance):
+	"Get filament distance for move distance"
+
+	# Store values
+	f = self.filament_diameter
+	fr = f / 2
+	e = self.extrusion_multiplier
+	n = self.nozzle_size
+	h = self.layer_height
+	hr = h / 2
+	w = self.line_width
+
+	# Calculate capsule cross-section of filament
+	#   See http://manual.slic3r.org/advanced/flow-math
+	area = (w - h)*h + pi*(hr)**2
+
+	# Volume of line
+	volume = area * distance
+
+	# Filament length, scaled by extrusion multiplier
+	#   length mm = capsule mm^3 / filament mm^2
+	length = volume/(pi*fr**2)*e
+
+	# Return length for extruder
+	return length
 

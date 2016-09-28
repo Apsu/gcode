@@ -7,6 +7,7 @@ class Extrusion():
     extrude = 1
     retract = 2
     retract_only = 3
+    advance_only = 4
 
 class Units():
     mm = 0
