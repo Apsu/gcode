@@ -38,7 +38,7 @@ if __name__ == "__main__":
         # Hop to it
         p.hop(x=x1, y=y1, height=0.1, comment="move to lower left of rect", rate=100)
 
-        # Draw 50x50 rectangle starting at 50,50
+        # Draw specified rectangle
         p.rect(x1, y1, x2, y2, rate=20)
 
         # How many lines
