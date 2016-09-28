@@ -407,7 +407,7 @@ class Printer(object):
 	volume = area * distance
 
 	# Filament length, scaled by extrusion multiplier
-	#   length mm = capsule mm^3 / filament mm^2
+	#   length mm = capsule mm^3 / filament mm^2 * multiplier
 	length = volume/(pi*fr**2)*e
 
 	# Return length for extruder
