@@ -54,7 +54,7 @@ def start_mk2(printer):
     """
     Write out starting codes
 
-    This sequences is for the Original Prusa i3 Mk2
+    This sequence is for the Original Prusa i3 Mk2
     """
 
     # Set units to millimeters
